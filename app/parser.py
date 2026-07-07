@@ -2,6 +2,7 @@
 import aiohttp
 import asyncio
 import json
+from pydantic import BaseModel, ValidationError
 url = "https://pb.nalog.ru/search-proc.json"
 
 # Заголовки из curl
@@ -70,16 +71,23 @@ data = {
     "token": ""
 }
 
-async def fetch_nalog():
+
+#чисто чтобы убедиться что ид там есть
+class NalogResponse(BaseModel):
+    id: str
+
+async def fetch_nalog() -> int:
     async with aiohttp.ClientSession(headers=headers, cookies=cookies) as session:
         async with session.post(url, data=data) as response:
-            text = await response.text()
-            print("Статус:", response.status)
-            print("Ответ (первые 500 символов):", text[:500])
+            if response.status != 200:
+                raise RuntimeError(f"HTTP {response.status}: {await response.text()}")
+
             try:
-                return json.loads(text)["id"]
-            except:
-                raise RuntimeError("нет id")
+                raw = await response.json()
+                validated = NalogResponse.model_validate(raw)
+                return validated.id
+            except (aiohttp.ContentTypeError, ValueError, ValidationError) as e:
+                raise RuntimeError("Не удалось распарсить или валидировать ответ") from e
 
 
 if __name__ == "__main__":
