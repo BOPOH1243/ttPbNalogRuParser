@@ -3,6 +3,7 @@ import aiohttp
 import asyncio
 import json
 from pydantic import BaseModel, ValidationError
+import aiohttp
 url = "https://pb.nalog.ru/search-proc.json"
 
 # Заголовки из curl
@@ -24,59 +25,71 @@ headers = {
 cookies = {
     "JSESSIONID": "6337B6A83E745A1D760EB6EDCDBC66FA"
 }
-data = {
-    "mode": "search-upr-uchr",
-    "queryAll": "Андрей",
-    "queryUl": "",
-    "okvedUl": "",
-    "okvedTypeUl": "",
-    "regionUl": "",
-    "statusUl": "",
-    "isMspUl": "",
-    "mspUl1": "1",
-    "mspUl2": "1",
-    "mspUl3": "1",
-    "queryIp": "Андрей",
-    "okvedIp": "",
-    "okvedTypeIp": "",
-    "regionIp": "",
-    "statusIp": "",
-    "isMspIp": "",
-    "mspIp1": "1",
-    "mspIp2": "1",
-    "mspIp3": "1",
-    "taxIp": "",
-    "queryUpr": "Андрей",
-    "uprType1": "1",
-    "queryRdl": "",
-    "dateRdl": "",
-    "queryAddr": "",
-    "regionAddr": "",
-    "queryOgr": "",
-    "ogrFl": "1",
-    "ogrUl": "1",
-    "ogrnUlDoc": "",
-    "ogrnIpDoc": "",
-    "npTypeDoc": "1",
-    "nameUlDoc": "",
-    "nameIpDoc": "",
-    "formUlDoc": "",
-    "formIpDoc": "",
-    "ifnsDoc": "",
-    "dateFromDoc": "",
-    "dateToDoc": "",
-    "page": "3",
-    "pageSize": "10",
-    "pbCaptchaToken": "",
-    "token": ""
-}
 
+# FIXME кастомные исключения можно вынести в отдельный модуль
+class NalogError(Exception):
+    pass
 
-#чисто чтобы убедиться что ид там есть
+# чисто чтобы убедиться что ид там есть
 class NalogResponse(BaseModel):
     id: str
 
-async def fetch_nalog() -> int:
+
+# Модель для проверки структуры ответа
+class UprContainer(BaseModel):
+    data: list  # внутри upr должен быть список data
+
+class NalogDataResponse(BaseModel):
+    upr: UprContainer  # на верхнем уровне обязательное поле upr
+    #FIXME а может сделать один класс вместо двух?
+
+async def fetch_nalog_id(query:str) -> str:
+    data = {
+        "mode": "search-upr-uchr",
+        "queryAll": query,
+        "queryUl": "",
+        "okvedUl": "",
+        "okvedTypeUl": "",
+        "regionUl": "",
+        "statusUl": "",
+        "isMspUl": "",
+        "mspUl1": "1",
+        "mspUl2": "1",
+        "mspUl3": "1",
+        "queryIp": "Андрей",
+        "okvedIp": "",
+        "okvedTypeIp": "",
+        "regionIp": "",
+        "statusIp": "",
+        "isMspIp": "",
+        "mspIp1": "1",
+        "mspIp2": "1",
+        "mspIp3": "1",
+        "taxIp": "",
+        "queryUpr": "Андрей",
+        "uprType1": "1",
+        "queryRdl": "",
+        "dateRdl": "",
+        "queryAddr": "",
+        "regionAddr": "",
+        "queryOgr": "",
+        "ogrFl": "1",
+        "ogrUl": "1",
+        "ogrnUlDoc": "",
+        "ogrnIpDoc": "",
+        "npTypeDoc": "1",
+        "nameUlDoc": "",
+        "nameIpDoc": "",
+        "formUlDoc": "",
+        "formIpDoc": "",
+        "ifnsDoc": "",
+        "dateFromDoc": "",
+        "dateToDoc": "",
+        "page": "1",
+        "pageSize": "100",
+        "pbCaptchaToken": "",
+        "token": ""
+    }
     async with aiohttp.ClientSession(headers=headers, cookies=cookies) as session:
         async with session.post(url, data=data) as response:
             if response.status != 200:
@@ -88,8 +101,45 @@ async def fetch_nalog() -> int:
                 return validated.id
             except (aiohttp.ContentTypeError, ValueError, ValidationError) as e:
                 raise RuntimeError("Не удалось распарсить или валидировать ответ") from e
+            
 
+
+
+async def fetch_nalog_data(id: str) -> list:
+    """
+    Получает данные по ID и возвращает список из поля upr.data.
+    """
+    data_payload = {
+        "id": id,
+        "method": "get-response"
+    }
+
+    async with aiohttp.ClientSession(headers=headers, cookies=cookies) as session:
+        async with session.post(url, data=data_payload) as response:
+            # Проверка статуса
+            if response.status != 200:
+                error_text = await response.text()
+                raise NalogError(f"HTTP {response.status}: {error_text[:200]}")
+
+            try:
+                raw = await response.json()
+            except (aiohttp.ContentTypeError, ValueError) as e:
+                raise NalogError("Ответ сервера не является корректным JSON") from e
+
+            # валидация через Pydantic
+            try:
+                validated = NalogDataResponse.model_validate(raw)
+            except ValidationError as e:
+                raise NalogError(f"Неверная структура ответа: {e}") from e
+
+            # FIXME возвращать ли сразу список?
+            return validated.upr.data
+        
+async def fetch(query:str):
+    id = await fetch_nalog_id("Андрей")
+    data = await fetch_nalog_data(id)
+    return data
 
 if __name__ == "__main__":
-    a = asyncio.run(fetch_nalog())
-    print(a)
+    data = asyncio.run(fetch("Андрей"))
+    print(len(data))
