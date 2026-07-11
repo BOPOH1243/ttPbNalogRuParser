@@ -1,0 +1,159 @@
+services:
+
+
+  app:
+
+    build:
+      context: .
+
+    container_name: nalog_parser_service
+
+    restart: always
+
+    ports:
+      - "8000:8000"
+
+    environment:
+
+      RABBIT_URL:
+        amqp://guest:guest@rabbitmq:5672/
+
+      RABBIT_REQUEST_QUEUE:
+        pb.nalog.search.request
+
+      RABBIT_STATUS_QUEUE:
+        pb.nalog.search.status
+
+
+      KAFKA_BOOTSTRAP:
+        kafka:9092
+
+
+      KAFKA_TOPIC:
+        pb.nalog.search.response
+
+
+    depends_on:
+
+      rabbitmq:
+        condition: service_healthy
+
+      kafka:
+        condition: service_started
+
+
+
+  rabbitmq:
+
+
+    image:
+      rabbitmq:3-management
+
+
+    container_name:
+      rabbitmq
+
+
+    restart:
+      always
+
+
+    ports:
+
+      - "5672:5672"
+
+      - "15672:15672"
+
+
+    healthcheck:
+
+      test:
+        [
+          "CMD",
+          "rabbitmq-diagnostics",
+          "ping"
+        ]
+
+      interval:
+        10s
+
+      timeout:
+        5s
+
+      retries:
+        5
+
+
+
+  zookeeper:
+
+
+    image:
+      confluentinc/cp-zookeeper:7.6.1
+
+
+    container_name:
+      zookeeper
+
+
+    restart:
+      always
+
+
+    environment:
+
+      ZOOKEEPER_CLIENT_PORT:
+        2181
+
+
+      ZOOKEEPER_TICK_TIME:
+        2000
+
+
+
+  kafka:
+
+
+    image:
+      confluentinc/cp-kafka:7.6.1
+
+
+    container_name:
+      kafka
+
+
+    restart:
+      always
+
+
+    depends_on:
+
+      - zookeeper
+
+
+    ports:
+
+      - "9092:9092"
+
+
+    environment:
+
+
+      KAFKA_BROKER_ID:
+        1
+
+
+      KAFKA_ZOOKEEPER_CONNECT:
+        zookeeper:2181
+
+
+      KAFKA_ADVERTISED_LISTENERS:
+        PLAINTEXT://kafka:9092
+
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:
+        PLAINTEXT:PLAINTEXT
+
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR:
+        1

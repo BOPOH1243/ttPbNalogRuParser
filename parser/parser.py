@@ -242,10 +242,9 @@ async def fetch_nalog_data(id: str) -> list:
         
 async def fetch(query: str):
     id = await fetch_nalog_id("Андрей")
-    # пришлось сделать срез ибо без прокси реально долго
-    data = (await fetch_nalog_data(id))[:10]
+    data = await fetch_nalog_data(id)
 
-    # Прогресс-бар для цикла по людям, нагружает сервак, блокирует своим выводом, однако просто красив и неплохо смотрится на тестовом варианте
+    # Прогресс-бар для цикла по людям
     for person in tqdm(data, desc="Обработка людей"):
         person_id = await fetch_director_data_id(person['token'], person['name'])
         # организации, в которых этот перс директор
